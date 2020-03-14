@@ -1,5 +1,3 @@
-# TODO: Measure time of functions executions
-
 import random
 import math
 import os
@@ -7,6 +5,7 @@ import matplotlib.pyplot as plt
 from itertools import permutations
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+from time import time
 
 sample = [
     (288, 149), (288, 129), (270, 133), (256, 141), (256, 157), (246, 157),
@@ -56,64 +55,69 @@ def rand_coords():
     return random.randrange(10000), random.randrange(10000)
 
 
+def compute_distances_float(locations):
+    distances = {}
+    for from_counter, from_node in enumerate(locations):
+        distances[from_counter] = {}
+        for to_counter, to_node in enumerate(locations):
+            if from_counter == to_counter:
+                distances[from_counter][to_counter] = 0
+            else:
+                distances[from_counter][to_counter] = (
+                    math.hypot((from_node[0] - to_node[0]),
+                               (from_node[1] - to_node[1])))
+
+    return distances
+
+
 def brute_force():
+    time_start = time()
     to_go = cities.copy()
     to_go.remove(to_go[0])
 
     perm = names.copy()
     perm.remove(0)
-    routes = {}
-    for perm_index, perm in enumerate(permutations(list(map(str, perm)))):
-        routes[perm_index] = []
-        routes[perm_index].append(0)
-        for j, p in enumerate(perm):
-            routes[perm_index].append(int(p))
-        routes[perm_index].append(0)
 
-    distances = {}
+    min_distance = float("inf")
+    min_route = []
 
-    for from_index, from_coords in enumerate(cities):
-        distances[from_index] = {}
-        for to_index, to_coords in enumerate(cities):
-            if from_index == to_index:
-                distances[from_index][to_index] = 0
-            else:
-                distances[from_index][to_index] = \
-                    (math.hypot((from_coords[0] - to_coords[0]), (from_coords[1] - to_coords[1])))
+    distances = compute_distances_float(cities)
 
-    routes_dist = {}
+    for index, permutation in enumerate(permutations(list(map(str, perm)))):
 
-    for route in routes:
-        dist = 0
-        for route_i in range(len(routes[route])-1):
-            dist += distances[routes[route][route_i]][routes[route][route_i+1]]
-        routes_dist[route] = dist
+        route = [0]
+        for p in list(map(int, permutation)):
+            route.append(p)
+        route.append(0)
 
-    shortest_dist = routes_dist[0]
-    shortest_route = 0
-    for route in routes_dist:
-        if routes_dist[route] < shortest_dist:
-            shortest_dist = routes_dist[route]
-            shortest_route = route
+        distance = 0
+        for r in range(len(route)-1):
+            distance += distances[route[r]][route[r+1]]
 
+        if distance < min_distance:
+            min_distance = distance
+            min_route = route.copy()
+
+    time_stop = time()
     print("Shortest Route: ")
-    print(routes[shortest_route])
-    print("Distance: " + str(round(shortest_dist, 3)))
+    print(min_route)
+    print("Distance: " + str(round(min_distance, 3)) + " Found in: " + str(round(time_stop - time_start, 5)) + "s")
 
     x = []
     y = []
-    for city in routes[shortest_route]:
+    for city in min_route:
         x.append(cities[city][0])
         y.append(cities[city][1])
 
     plt.plot(x, y, linestyle='--', marker='.', color='r')
     plt.plot(x[0], y[0], marker='o', color='r')
-    plt.title("Route by Brute-Force. Distance: " + str(round(shortest_dist, 3)))
+    plt.title("Route by Brute-Force. Distance: " + str(round(min_distance, 3)) + " Time: " + str(round(time_stop - time_start, 5)) + "s")
     plt.autoscale()
     plt.show()
 
 
 def nearest_neighbour():
+    time_start = time()
     global cities
     to_go = names.copy()
     to_go.remove(0)
@@ -145,17 +149,18 @@ def nearest_neighbour():
     route.append(0)
     x.append(cities[0][0])
     y.append(cities[0][1])
+    time_stop = time()
 
     print("Designated route: " + str(route))
-    print("Distance: " + str(round(distance, 3)))
+    print("Distance: " + str(round(distance, 3)) + " Found in: " + str(round(time_stop - time_start, 5)) + "s")
 
     plt.plot(x, y, linestyle='--', marker='.', color='g')
     plt.plot(x[0], y[0], marker='o', color='brown')
-    plt.title("Route by nearest neighbour. Distance: " + str(round(distance, 3)))
+    plt.title("Route by nearest neighbour. Distance: " + str(round(distance, 3)) + " Time: " + str(round(time_stop - time_start, 5)) + "s")
     plt.show()
 
 
-def compute_distances(locations):
+def compute_distances_int(locations):
     distances = {}
     for from_counter, from_node in enumerate(locations):
         distances[from_counter] = {}
@@ -167,11 +172,10 @@ def compute_distances(locations):
                     math.hypot((from_node[0] - to_node[0]),
                                (from_node[1] - to_node[1]))))
 
-    print(distances)
     return distances
 
 
-def display_solution(manager, routing, solution):
+def display_solution(manager, routing, solution, duration):
     index = routing.Start(0)
     plan_output = 'Route:\n['
     x = [data['cities'][index][0] / 1000]
@@ -184,16 +188,17 @@ def display_solution(manager, routing, solution):
     plan_output += '{}]\n'.format(manager.IndexToNode(index))
     x.append(data['cities'][0][0] / 1000)
     y.append(data['cities'][0][1] / 1000)
-    plan_output += 'Distance: {}\n'.format(solution.ObjectiveValue() / 1000)
+    plan_output += 'Distance: {}\n'.format(solution.ObjectiveValue() / 1000) + " Found in: " + str(duration) + "s"
     print(plan_output)
 
     plt.plot(x, y, linestyle='--', marker='.', color='b')
     plt.plot(x[0], y[0], marker='o', color='b')
-    plt.title("Route by Google OR-Tools. Distance: " + str(solution.ObjectiveValue() / 1000))
+    plt.title("Route by Google OR-Tools. Distance: " + str(solution.ObjectiveValue() / 1000) + " Time: " + str(duration) + "s")
     plt.show()
 
 
 def ortools_solver():
+    start_time = time()
     data['cities'] = []
     data['salesmen'] = 1
     data['start'] = 0
@@ -206,7 +211,7 @@ def ortools_solver():
     manager = pywrapcp.RoutingIndexManager(len(data['cities']), data['salesmen'], data['start'])
     routing = pywrapcp.RoutingModel(manager)
 
-    distances = compute_distances(data['cities'])
+    distances = compute_distances_int(data['cities'])
 
     def distance_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
@@ -226,12 +231,12 @@ def ortools_solver():
     # search_params.log_search = True
 
     solution = routing.SolveWithParameters(search_params)
-
-    display_solution(manager, routing, solution)
+    stop_time = time()
+    display_solution(manager, routing, solution, round(stop_time - start_time, 5))
 
 
 if __name__ == '__main__':
-    n_cities = 10
+    n_cities = 11
     names = []
     data = {}
     for i in range(n_cities):
@@ -240,6 +245,7 @@ if __name__ == '__main__':
     cities = []
 
     i = 0
+
     for name in names:
         cities.append(rand_coords())
         # cities.append(sample[i])

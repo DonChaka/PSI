@@ -1,6 +1,6 @@
 import random
+import itertools
 import math
-import os
 import matplotlib.pyplot as plt
 from itertools import permutations
 from ortools.constraint_solver import routing_enums_pb2
@@ -40,6 +40,21 @@ sample2 = [(17, 84), (95, 67), (85, 77), (82, 95), (36, 35), (7, 81), (63, 7), (
 def rand_coords():
     random.seed()
     return random.randrange(100), random.randrange(100)
+
+
+def compute_distances_int(locations):
+    distances = {}
+    for from_counter, from_node in enumerate(locations):
+        distances[from_counter] = {}
+        for to_counter, to_node in enumerate(locations):
+            if from_counter == to_counter:
+                distances[from_counter][to_counter] = 0
+            else:
+                distances[from_counter][to_counter] = (int(
+                    math.hypot((from_node[0] - to_node[0]),
+                               (from_node[1] - to_node[1]))))
+
+    return distances
 
 
 def compute_distances_float(locations):
@@ -147,41 +162,56 @@ def nearest_neighbour():
     plt.show()
 
 
-def display_solution(manager, routing, solution, duration):
-    index = routing.Start(0)
-    plan_output = 'Route:\n['
-    x = [data['cities'][index][0] / 1000]
-    y = [data['cities'][index][1] / 1000]
-    while not routing.IsEnd(index):
-        plan_output += '{}, '.format(manager.IndexToNode(index))
-        x.append(data['cities'][index][0] / 1000)
-        y.append(data['cities'][index][1] / 1000)
-        index = solution.Value(routing.NextVar(index))
-    plan_output += '{}]\n'.format(manager.IndexToNode(index))
-    x.append(data['cities'][0][0] / 1000)
-    y.append(data['cities'][0][1] / 1000)
-    plan_output += 'Distance: {}\n'.format(solution.ObjectiveValue() / 1000) + " Found in: " + str(duration) + "s"
-    print(plan_output)
+def held_karp(dists):
 
-    plt.plot(x, y, linestyle='--', marker='.', color='b')
-    plt.plot(x[0], y[0], marker='o', color='b')
-    plt.title("Route by Google OR-Tools. Distance: " + str(solution.ObjectiveValue() / 1000) + " Time: " + str(duration) + "s")
-    plt.show()
+    time_start = time()
+    n = len(dists)
 
+    C = {}
 
-def compute_distances_int(locations):
-    distances = {}
-    for from_counter, from_node in enumerate(locations):
-        distances[from_counter] = {}
-        for to_counter, to_node in enumerate(locations):
-            if from_counter == to_counter:
-                distances[from_counter][to_counter] = 0
-            else:
-                distances[from_counter][to_counter] = (int(
-                    math.hypot((from_node[0] - to_node[0]),
-                               (from_node[1] - to_node[1]))))
+    for k in range(1, n):
+        C[(1 << k, k)] = (dists[0][k], 0)
 
-    return distances
+    for sub_size in range(2, n):
+        for subset in itertools.combinations(range(1, n), sub_size):
+            bits = 0
+            for bit in subset:
+                bits |= 1 << bit
+
+            for k in subset:
+                prev = bits & ~(1 << k)
+                res = []
+                for m in subset:
+                    if m == 0 or m == k:
+                        continue
+                    res.append((C[(prev, m)][0] + dists[m][k], m))
+                C[(bits, k)] = min(res)
+
+    bits = (2**n - 1) - 1
+
+    res = []
+    for k in range(1, n):
+        res.append((C[(bits, k)][0] + dists[k][0], k))
+
+    opt, parent = min(res)
+
+    path = []
+    for i in range(n - 1):
+        path.append(parent)
+        new_bits = bits & ~(1 << parent)
+        _, parent = C[(bits, parent)]
+        bits = new_bits
+
+    path.append(0)
+
+    path = list(reversed(path))
+    path.append(0)
+
+    time_stop = time()
+
+    print("Held-karp route: " + str(path))
+    print("Cost: " + str(round(opt, 3)) + " Time: " + str(round(time_stop - time_start, 5)) + "s")
+
 
 
 def ortools_solver():
@@ -221,8 +251,30 @@ def ortools_solver():
     display_solution(manager, routing, solution, round(stop_time - start_time, 5))
 
 
+def display_solution(manager, routing, solution, duration):
+    index = routing.Start(0)
+    plan_output = 'Route:\n['
+    x = [data['cities'][index][0] / 1000]
+    y = [data['cities'][index][1] / 1000]
+    while not routing.IsEnd(index):
+        plan_output += '{}, '.format(manager.IndexToNode(index))
+        x.append(data['cities'][index][0] / 1000)
+        y.append(data['cities'][index][1] / 1000)
+        index = solution.Value(routing.NextVar(index))
+    plan_output += '{}]\n'.format(manager.IndexToNode(index))
+    x.append(data['cities'][0][0] / 1000)
+    y.append(data['cities'][0][1] / 1000)
+    plan_output += 'Distance: {}\n'.format(solution.ObjectiveValue() / 1000) + " Found in: " + str(duration) + "s"
+    print(plan_output)
+
+    plt.plot(x, y, linestyle='--', marker='.', color='b')
+    plt.plot(x[0], y[0], marker='o', color='b')
+    plt.title("Route by Google OR-Tools. Distance: " + str(solution.ObjectiveValue() / 1000) + " Time: " + str(duration) + "s")
+    plt.show()
+
+
 if __name__ == '__main__':
-    n_cities = 12
+    n_cities = 20
     names = []
     data = {}
     for i in range(n_cities):
@@ -233,9 +285,9 @@ if __name__ == '__main__':
     i = 0
 
     for name in names:
-        # cities.append(rand_coords())
-        cities.append(sample2[i])
-        i += 1
+        cities.append(rand_coords())
+        # cities.append(sample2[i])
+        # i += 1
 
     print(cities)
 
@@ -249,6 +301,10 @@ if __name__ == '__main__':
 
     print("Nearest Neighbor: ")
     nearest_neighbour()
+    print("======================================")
+
+    print("Held-Karp: ")
+    held_karp(compute_distances_float(cities))
     print("======================================")
 
     print("OR-Tools solution")

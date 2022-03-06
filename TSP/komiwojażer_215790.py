@@ -280,7 +280,7 @@ def display_solution(manager, routing, solution, duration):
 
 if __name__ == '__main__':
 
-    n_cities = 500
+    n_cities = 10
     names = []
     data = {}
     for i in range(n_cities):
@@ -297,21 +297,21 @@ if __name__ == '__main__':
 
     # print(cities)
 
-    if n_cities < 13:
-        print("Brute-force: ")
-        try:
-            brute_force()
-        except MemoryError:
-            print("Memory Error detected. Model too big for brute force on this device")
+    # if n_cities < 13:
+    #     print("Brute-force: ")
+    #     try:
+    #         brute_force()
+    #     except MemoryError:
+    #         print("Memory Error detected. Model too big for brute force on this device")
 
-    print("Nearest Neighbor: ")
-    nearest_neighbour()
+    # print("Nearest Neighbor: ")
+    # nearest_neighbour()
 
     if n_cities < 20:
         print("Held-Karp: ")
         timer = held_karp(compute_distances_float(cities))
 
-    print("OR-Tools solution")
-    ortools_solver()
-    print("======================================")
+    # print("OR-Tools solution")
+    # ortools_solver()
+    # print("======================================")
 

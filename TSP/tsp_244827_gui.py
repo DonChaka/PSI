@@ -1,4 +1,5 @@
 import sys
+import time
 from dataclasses import dataclass
 from typing import List
 import numpy as np
@@ -27,12 +28,13 @@ distances = np.zeros((SIZE, SIZE))
 
 
 def calculate_basics(size, direct, bro):
-    global SIZE, total, directional, broken, distances
+    global SIZE, total, directional, broken, distances, cities
     SIZE = size
     directional = direct
     broken = bro
     total = np.math.factorial(SIZE - 1)
     distances = np.zeros((SIZE, SIZE))
+    cities = [rand_coords() for i in range(SIZE)]
     if not directional:
         total /= 2
 
@@ -53,49 +55,69 @@ class MainWindow(QtWidgets.QWidget):
 
         self.abort = False
 
+        func_labels = ['DFS', 'BFS']
+
         layout = QHBoxLayout(self)
+        left = QVBoxLayout(self)
+        central = QVBoxLayout(self)
         right = QVBoxLayout(self)
 
-        self.plot_view = QLabel()
-        layout.addWidget(self.plot_view)
-
+        layout.addLayout(left)
+        layout.addLayout(central)
         layout.addLayout(right)
 
-        self.func_choice = QComboBox()
-        self.func_choice.addItems(['DFS', 'BFS'])
-        right.addWidget(self.func_choice)
+        self.left_plot_view = QLabel("left")
+        left.addWidget(self.left_plot_view)
+        self.left_progress_bar = QProgressBar(self)
+        left.addWidget(self.left_progress_bar)
+        self.left_output_label = QLabel(self)
+        left.addWidget(self.left_output_label)
+
+        self.right_plot_view = QLabel("right")
+        right.addWidget(self.right_plot_view)
+        self.right_progress_bar = QProgressBar(self)
+        right.addWidget(self.right_progress_bar)
+        self.right_output_label = QLabel()
+        right.addWidget(self.right_output_label)
+
+        self.left_func_choice = QComboBox()
+        self.left_func_choice.addItems(func_labels)
+        self.right_func_choice = QComboBox()
+        self.right_func_choice.addItems(func_labels)
+        combo_layout = QHBoxLayout(self)
+        combo_layout.addWidget(self.left_func_choice)
+        combo_layout.addWidget(self.right_func_choice)
+        central.addLayout(combo_layout)
 
         size_label = QLabel("Ilosc miast")
         self.sizeBox = QLineEdit()
         size_layout = QHBoxLayout(self)
         size_layout.addWidget(self.sizeBox)
         size_layout.addWidget(size_label)
-        right.addLayout(size_layout)
+        central.addLayout(size_layout)
 
         dir_label = QLabel("Kierunkowy")
         self.directional_checkbox = QCheckBox()
         dir_layout = QHBoxLayout(self)
         dir_layout.addWidget(self.directional_checkbox)
         dir_layout.addWidget(dir_label)
-        right.addLayout(dir_layout)
+        central.addLayout(dir_layout)
 
         broken_label = QLabel("Zerwane połączenia")
         self.broken_checkbox = QCheckBox()
         broken_layout = QHBoxLayout(self)
         broken_layout.addWidget(self.broken_checkbox)
         broken_layout.addWidget(broken_label)
-        right.addLayout(broken_layout)
+        central.addLayout(broken_layout)
 
         self.btn = QPushButton("Start")
         self.btn.clicked.connect(self.search_btn_clicked)
-        right.addWidget(self.btn)
+        central.addWidget(self.btn)
 
-        self.progress_bar = QProgressBar(self)
-        right.addWidget(self.progress_bar)
 
         abort_btn = QPushButton("Przerwij")
         abort_btn.clicked.connect(self.abort_search)
-        right.addWidget(abort_btn)
+        central.addWidget(abort_btn)
 
         self.setLayout(layout)
 
@@ -104,7 +126,7 @@ class MainWindow(QtWidgets.QWidget):
     def abort_search(self):
         self.abort = True
 
-    def plot_results(self, answer):
+    def plot_results(self, answer, target_label):
         x = [i[0] for i in answer]
         y = [i[1] for i in answer]
         z = [i[2] for i in answer]
@@ -115,11 +137,14 @@ class MainWindow(QtWidgets.QWidget):
 
         ax.scatter(x, y, z, c='red', s=100)
         ax.plot(x, y, z, color='black')
-        plt.savefig('temp_plot.png')
-        pixmap = QPixmap('temp_plot.png')
-        self.plot_view.setPixmap(pixmap)
-        self.plot_view.resize(pixmap.width(), pixmap.height())
-        os.remove('temp_plot.png')
+        filename = f'{threading.get_ident()}.png'
+        plt.savefig(filename)
+        pixmap = QPixmap(filename)
+        target_label.setPixmap(pixmap)
+        target_label.resize(pixmap.width(), pixmap.height())
+        plt.clf()
+        plt.cla()
+        os.remove(filename)
 
     def search_btn_clicked(self):
         try:
@@ -136,30 +161,39 @@ class MainWindow(QtWidgets.QWidget):
 
         calculate_basics(size, self.directional_checkbox.isChecked(), self.broken_checkbox.isChecked())
 
-        th = threading.Thread(target=self.functions[self.func_choice.currentIndex()])
-        th.start()
+        left_plot = threading.Thread(target=self.functions[self.left_func_choice.currentIndex()],
+                                     args=[self.left_plot_view, self.left_progress_bar, self.left_output_label])
+        right_plot = threading.Thread(target=self.functions[self.right_func_choice.currentIndex()],
+                                      args=[self.right_plot_view, self.right_progress_bar, self.right_output_label])
+        left_plot.start()
+        left_plot.join()
+        right_plot.start()
+        right_plot.join()
 
-    def dfs_plot(self):
+    def dfs_plot(self, target_pixmap, target_progress_bar, target_output_label: QLabel):
         self.btn.setEnabled(False)
         global cities, SIZE
-        cities = [rand_coords() for i in range(SIZE)]
+        start = time.time()
         calculate_costs(distances)
 
         depth_leaves_full_asym: List[Node] = []
 
         root = Node([0], 0)
-        self.depth_generate_tree_leaves(root, depth_leaves_full_asym)
+        self.depth_generate_tree_leaves(root, depth_leaves_full_asym, target_progress_bar)
+        shortest = root
         if len(depth_leaves_full_asym) > 0:
             shortest = depth_leaves_full_asym[0]
             for leaf in depth_leaves_full_asym:
                 if leaf.cost < shortest.cost:
                     shortest = leaf
 
-            self.plot_results([cities[i] for i in shortest.path])
+            self.plot_results([cities[i] for i in shortest.path], target_pixmap)
+        _time = round((time.time() - start), 5)
+        target_output_label.setText(f'Algorytm DFS znalazl rozwiazanie {shortest.path} z kosztem {shortest.cost}, w czasie {_time}')
         self.abort = False
         self.btn.setEnabled(True)
 
-    def depth_generate_tree_leaves(self, node: Node, leaves: List[Node]):
+    def depth_generate_tree_leaves(self, node: Node, leaves: List[Node], progress_bar):
         if not directional and len(leaves) >= total:
             return
         if self.abort:
@@ -171,7 +205,7 @@ class MainWindow(QtWidgets.QWidget):
             node.path.append(node.path[0])
             node.cost += distances[node.path[-2], node.path[-1]]
             leaves.append(node)
-            self.progress_bar.setValue(int(len(leaves) / total * 100))
+            progress_bar.setValue(int(len(leaves) / total * 100))
             return
 
         while len(node.remaining) > 0:
@@ -182,29 +216,33 @@ class MainWindow(QtWidgets.QWidget):
             child = Node(new_path, node.cost)
             node.remaining.pop(0)
             child.cost += distances[child.path[-2], child.path[-1]]
-            self.depth_generate_tree_leaves(child, leaves)
+            self.depth_generate_tree_leaves(child, leaves, progress_bar)
 
-    def bfs_plot(self):
+    def bfs_plot(self, target_pixmap, target_progress_bar, target_output_label: QLabel):
         self.btn.setEnabled(False)
         global cities, SIZE
-        cities = [rand_coords() for i in range(SIZE)]
+        start = time.time()
         calculate_costs(distances)
 
         breadth_leaves_full_asym: List[Node] = []
 
         root = Node([0], 0)
-        self.depth_generate_tree_leaves(root, breadth_leaves_full_asym)
+        self.breadth_generate_tree_leaves([root], breadth_leaves_full_asym, target_progress_bar)
+        shortest = root
         if len(breadth_leaves_full_asym) > 0:
             shortest = breadth_leaves_full_asym[0]
             for leaf in breadth_leaves_full_asym:
                 if leaf.cost < shortest.cost:
                     shortest = leaf
 
-            self.plot_results([cities[i] for i in shortest.path])
+            self.plot_results([cities[i] for i in shortest.path], target_pixmap)
+
+        _time = round((time.time() - start), 5)
+        target_output_label.setText(f'Algorytm BFS znalazl rozwiazanie {shortest.path} z kosztem {shortest.cost}, w czasie {_time}')
         self.abort = False
         self.btn.setEnabled(True)
 
-    def breadth_generate_tree_leaves(self, nodes: List[Node], leaves: List[Node]):
+    def breadth_generate_tree_leaves(self, nodes: List[Node], leaves: List[Node], progress_bar):
         if not directional and len(leaves) >= total:
             return
 
@@ -221,7 +259,7 @@ class MainWindow(QtWidgets.QWidget):
                 child = Node(new_path, node.cost)
                 child.cost += distances[child.path[-2], child.path[-1]]
                 next_level_nodes.append(child)
-                self.progress_bar.setValue(int(len(next_level_nodes) / total * 100))
+                progress_bar.setValue(int(max(len(next_level_nodes), len(nodes)) / total * 100))
                 if len(next_level_nodes) >= total:
                     break
             if len(next_level_nodes) >= total:
@@ -229,7 +267,7 @@ class MainWindow(QtWidgets.QWidget):
 
         if len(next_level_nodes) == 0:
             return
-        self.breadth_generate_tree_leaves(next_level_nodes, leaves)
+        self.breadth_generate_tree_leaves(next_level_nodes, leaves, progress_bar)
 
 
 def rand_coords():

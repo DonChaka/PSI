@@ -8,7 +8,7 @@ from collections import deque
 
 random.seed()
 
-SIZE = 13
+SIZE = 25
 cities = []
 total = np.math.factorial(SIZE - 1) / 2
 directional = True
@@ -119,7 +119,7 @@ def calculate_heuristic(node: Node, func: Callable) -> NoReturn:
     else:
         temp = [distances[node.path[-1], i] for i in node.remaining if distances[node.path[-1], i] != float('inf')]
         if len(temp):
-            node.heuristic_value = (SIZE - len(node.path)) * func(temp)
+            node.heuristic_value = len(node.remaining) * func(temp)
 
 
 def depth_generate_tree_leaves(node: Node, leaves: List[Node]):
@@ -300,8 +300,12 @@ def run_bfs():
 @timeit
 def run_nearest_neighbour():
     print('Algorytm najblizszego sasiada')
-    root = Node([0], 0)
-    shortest = nearest_neighbour(root)
+    shortest = float('inf')
+    i = 0
+    while shortest == float('inf'):
+        root = Node([i], 0)
+        shortest = nearest_neighbour(root)
+        i += 1
     print(shortest)
     plot_results([cities[i] for i in shortest.path],
                  title=f'Trasa wyznaczona przez nearest neighboiur, koszt={round(shortest.cost, 2)}')
@@ -310,8 +314,12 @@ def run_nearest_neighbour():
 @timeit
 def run_depth_nearest_neighbour():
     print('Algorytm najblizszego sasiadaz glebia 2')
-    root = Node([0], 0)
-    shortest = depth_nearest_neighbour(root)
+    shortest = float('inf')
+    i = 0
+    while shortest == float('inf'):
+        root = Node([i], 0)
+        shortest = depth_nearest_neighbour(root)
+        i += 1
     print(shortest)
     plot_results([cities[i] for i in shortest.path],
                  title=f'Trasa wyznaczona przez nearest neighboiur z glebia 2, koszt={round(shortest.cost, 2)}')
@@ -346,15 +354,14 @@ def main():
     if SIZE <= 11:
         run_dfs()
 
-    # if SIZE <= 10:
-    #     run_bfs()
+    if SIZE <= 11:
+        run_bfs()
 
     run_nearest_neighbour()
-    # run_depth_nearest_neighbour()
-    # run_a_star(heuristic=np.max)
+    run_depth_nearest_neighbour()
     run_a_star(heuristic=np.average)
     run_a_star(heuristic=np.min)
-    # run_aco()
+    run_aco()
 
 
 if __name__ == '__main__':

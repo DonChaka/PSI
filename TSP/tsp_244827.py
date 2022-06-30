@@ -21,10 +21,17 @@ def timeit(method):
         start = time.time()
         res = method(*args, **kwargs)
         _time = time.time() - start
-        print(f'Czas wyszukiwania drogi: {round(_time, 2)}s', end='\n\n')
-        return res
+        return res, _time
 
     return timed
+
+
+def softmax(vector):
+    vector = np.array(vector)
+    z = vector - max(vector)
+    numerator = np.exp(z)
+    denominator = np.sum(numerator)
+    return list(numerator / denominator)
 
 
 @dataclass(order=True, eq=True)
@@ -65,7 +72,6 @@ def prune_branches(dists: np.ndarray, chance: float = 0.2) -> np.ndarray:
             if random.random() < chance:
                 if check_cut(dists, i, j):
                     dists[i][j] = float('inf')
-
     return dists
 
 
@@ -115,11 +121,13 @@ def plot_results(answer, title=''):
 
 def calculate_heuristic(node: Node, func: Callable) -> NoReturn:
     if len(node.remaining) == 0:
-        node.heuristic_value = -float('inf')
+        node.heuristic_value = 0
     else:
         temp = [distances[node.path[-1], i] for i in node.remaining if distances[node.path[-1], i] != float('inf')]
         if len(temp):
             node.heuristic_value = len(node.remaining) * func(temp)
+        else:
+            node.heuristic_value = float('inf')
 
 
 def depth_generate_tree_leaves(node: Node, leaves: List[Node]):
@@ -228,14 +236,15 @@ def a_star(node: Node, heuristic: Callable) -> Node:
             new_temp_path.append(i)
             child = Node(new_temp_path, current.cost)
             child.cost += distances[child.path[-2], child.path[-1]]
-            calculate_heuristic(child, heuristic)
             if child.cost != float('inf'):
-                nodes.appendleft(child)
+                calculate_heuristic(child, heuristic)
+                nodes.append(child)
         nodes.remove(current)
 
 
-def aco(n_iter=100, n_ants=100, alpha=1, beta=1, Q=5, ro=0.05):
+def aco(n_iter=100, n_ants=100, alpha=0.75, beta=1.25, Q=5, ro=0.05):
     pheromones = np.ones((SIZE, SIZE))
+    dists = distances.copy()
     best_ant = None
     best_cost = float('inf')
     for t in range(n_iter):
@@ -245,30 +254,33 @@ def aco(n_iter=100, n_ants=100, alpha=1, beta=1, Q=5, ro=0.05):
             while ant.remaining:
                 p = {}
                 for j in ant.remaining:
-                    if distances[ant.path[-1], j] == float('inf'):
+                    if dists[ant.path[-1], j] == float('inf'):
                         continue
-                    p[j] = pheromones[ant.path[-1], j] ** alpha * (1 / distances[ant.path[-1], j]) ** beta
-                    p[j] /= np.sum(
-                        [pheromones[ant.path[-1], s] ** alpha * (1 / distances[ant.path[-1], s]) ** beta for s in
-                         ant.remaining if distances[ant.path[-1], s] != float('inf')])
-                choice = np.random.choice(list(p.keys()), p=list(p.values()))
+                    p[j] = pheromones[ant.path[-1], j] ** alpha * (1 / dists[ant.path[-1], j]) ** beta
+                if not list(p.keys()):
+                    ant.cost = float('inf')
+                    ant.path = []
+                    break
+                probs = list(p.values())
+                probs = softmax(probs)
+                choice = np.random.choice(list(p.keys()), p=probs)
                 ant.path.append(choice)
-                ant.cost += distances[ant.path[-2], ant.path[-1]]
+                ant.cost += dists[ant.path[-2], ant.path[-1]]
                 ant.remaining.remove(choice)
 
             for i in range(1, len(ant.path)):
-                pheromones[ant.path[i - 1], ant.path[i]] += Q * (distances[ant.path[i - 1], ant.path[i]] / ant.cost)
+                pheromones[ant.path[i - 1], ant.path[i]] += Q * (dists[ant.path[i - 1], ant.path[i]] / ant.cost)
             pheromones *= 1 - ro
             if ant.cost < best_cost:
                 best_ant = ant
     best_ant.path.append(best_ant.path[0])
-    best_ant.cost += distances[best_ant.path[-2], best_ant.path[-1]]
+    best_ant.cost += dists[best_ant.path[-2], best_ant.path[-1]]
     return best_ant
 
 
 @timeit
 def run_dfs():
-    print('Algorytm DFS')
+    # print('Algorytm DFS')
     depth_leaves_full_asym: List[Node] = []
     root = Node([0], 0)
     depth_generate_tree_leaves(root, depth_leaves_full_asym)
@@ -277,14 +289,15 @@ def run_dfs():
     for leaf in depth_leaves_full_asym:
         if leaf.cost < shortest.cost:
             shortest = leaf
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez DFS, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez DFS, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 @timeit
 def run_bfs():
-    print('Algorytm BFS')
+    # print('Algorytm BFS')
     root = Node([0], 0)
     breadth_leaves_full_asym: List[Node] = []
     breadth_generate_tree_leaves([root], breadth_leaves_full_asym)
@@ -292,76 +305,136 @@ def run_bfs():
     for leaf in breadth_leaves_full_asym:
         if leaf.cost < shortest.cost:
             shortest = leaf
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez algorytm BFS, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez algorytm BFS, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 @timeit
 def run_nearest_neighbour():
-    print('Algorytm najblizszego sasiada')
+    # print('Algorytm najblizszego sasiada')
     shortest = float('inf')
     i = 0
     while shortest == float('inf'):
         root = Node([i], 0)
         shortest = nearest_neighbour(root)
         i += 1
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez nearest neighboiur, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez nearest neighboiur, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 @timeit
 def run_depth_nearest_neighbour():
-    print('Algorytm najblizszego sasiadaz glebia 2')
+    # print('Algorytm najblizszego sasiadaz glebia 2')
     shortest = float('inf')
     i = 0
     while shortest == float('inf'):
         root = Node([i], 0)
         shortest = depth_nearest_neighbour(root)
         i += 1
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez nearest neighboiur z glebia 2, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez nearest neighboiur z glebia 2, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 @timeit
 def run_a_star(heuristic: Callable):
-    print(f'Algorytm A* korzystajacy z heurystyki {heuristic.__name__}')
+    # print(f'Algorytm A* korzystajacy z heurystyki {heuristic.__name__}')
     root = Node([0], 0)
     shortest = a_star(root, heuristic)
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez a* z heurystyką {heuristic.__name__}, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez a* z heurystyką {heuristic.__name__}, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 @timeit
 def run_aco(n_iter=100, n_ants=100, alpha=1, beta=1, Q=5, ro=0.05):
-    print('ALgorytm aco')
+    # print('ALgorytm aco')
     shortest = aco(n_iter, n_ants, alpha, beta, Q, ro)
-    print(shortest)
-    plot_results([cities[i] for i in shortest.path],
-                 title=f'Trasa wyznaczona przez algorytm aco, koszt={round(shortest.cost, 2)}')
+    # print(shortest)
+    # plot_results([cities[i] for i in shortest.path],
+    #              title=f'Trasa wyznaczona przez algorytm aco, koszt={round(shortest.cost, 2)}')
+    return shortest.cost
 
 
 def main():
-    global cities
-    cities = [rand_coords() for _ in range(SIZE)]
-    calculate_costs(distances)
-    if broken:
-        prune_branches(distances)
+    global cities, SIZE, distances, total
+    n_cities = [5, 10, 15, 20, 25]
+    metody = ['dfs', 'bfs', 'nearest_neighbour', 'depth_nearest_neighbour', 'a_star_avg', 'a_star_min', 'aco']
+    wyniki = {metoda: [(0, 0) for _ in range(max(n_cities)+1)] for metoda in metody}
+    for i in n_cities:
+        print(f'starting for {i} cities')
+        SIZE = i
+        cities = []
+        total = np.math.factorial(SIZE - 1) / 2
+        distances = np.zeros((SIZE, SIZE))
 
-    if SIZE <= 11:
-        run_dfs()
+        cities = [rand_coords() for _ in range(SIZE)]
+        calculate_costs(distances)
+        if broken:
+            prune_branches(distances)
 
-    if SIZE <= 11:
-        run_bfs()
+        if SIZE <= 11:
+            wyniki['dfs'][i] = run_dfs()
+            wyniki['bfs'][i] = run_bfs()
+        else:
+            wyniki['dfs'][i] = (float('inf'), float('inf'))
+            wyniki['bfs'][i] = (float('inf'), float('inf'))
 
-    run_nearest_neighbour()
-    run_depth_nearest_neighbour()
-    run_a_star(heuristic=np.average)
-    run_a_star(heuristic=np.min)
-    run_aco()
+        print(f'current: nearest neighbour')
+        wyniki['nearest_neighbour'][i] = run_nearest_neighbour()
+        print(f'current: depth nearest neighbour')
+        wyniki['depth_nearest_neighbour'][i] = run_depth_nearest_neighbour()
+        print(f'current: a* avg')
+        wyniki['a_star_avg'][i] = run_a_star(heuristic=np.average)
+        print(f'current: a* min')
+        wyniki['a_star_min'][i] = run_a_star(heuristic=np.min)
+        print(f'current: aco')
+        wyniki['aco'][i] = run_aco()
+
+    plt.figure(figsize=(10, 10))
+    plt.title('Czas wykonania algorytmów dla różnych liczby miast')
+    plt.xlabel('Liczba miast')
+    plt.ylabel('Czas wykonania [s]')
+    plt.xlim(min(n_cities), max(n_cities))
+    plt.grid(True)
+    for metoda in metody:
+        temp = [wyniki[metoda][i][1] for i in n_cities]
+        plt.plot(n_cities, temp, label=metoda)
+    plt.legend()
+    plt.show()
+
+    plt.figure(figsize=(10, 10))
+    plt.title('Czas wykonania algorytmów dla różnych liczby miast 2')
+    plt.xlabel('Liczba miast')
+    plt.ylabel('Czas wykonania [s]')
+    plt.xlim(min(n_cities), max(n_cities))
+    plt.grid(True)
+    for metoda in metody:
+        if metoda not in ['dfs', 'bfs', 'aco']:
+            temp = [wyniki[metoda][i][1] for i in n_cities]
+            plt.plot(n_cities, temp, label=metoda)
+    plt.legend()
+    plt.show()
+
+    plt.figure(figsize=(10, 10))
+    plt.title('Koszt uzyskany przez algorytmy dla różnych liczby miast')
+    plt.xlabel('Liczba miast')
+    plt.ylabel('Koszt')
+    plt.xlim(min(n_cities), max(n_cities))
+    plt.grid(True)
+    for metoda in metody:
+        temp = [wyniki[metoda][i][0] for i in n_cities]
+        plt.plot(n_cities, temp, label=metoda, alpha=0.75)
+    plt.legend()
+    plt.show()
+
+    # print(wyniki)
 
 
 if __name__ == '__main__':

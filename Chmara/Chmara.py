@@ -17,7 +17,7 @@ Y_MAX = 4.5
 
 
 def f(x, y):
-    return -((1.5 - x - y * x) ** 2 + (2.25 - x + (x * y) ** 2) ** 2 + (2.625 - x + (x * y) ** 3) ** 2)
+    return -((1.5 - x - y * x) ** 2 + (2.25 - x + x * y ** 2) ** 2 + (2.625 - x + x * y ** 3) ** 2)
 
 
 class Unit:
@@ -127,11 +127,11 @@ def main():
             Unit.exploration = False
         ax.set_xlim(X_MIN, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
-        ax.set_title(f"Iteration: {i}, Best value: {Unit.best_value:.2f}, at x: {Unit.best_x:.2f}, y: {Unit.best_y:.2f}")
+        ax.set_title(f"Iteration: {i}, Best value: {-Unit.best_value:.3f}, at x: {Unit.best_x:.2f}, y: {Unit.best_y:.2f}")
         # ax.set_xlabel("x")
         # ax.set_ylabel("y")
         # ax.grid()
-        # ax.contour(xx, yy, Z, levels=np.linspace(Z.min(), Z.max(), 10))
+        # ax.contour(xx, yy, Z)
         update(units, ax)
         plt.draw()
         plt.pause(0.001)
